@@ -1,27 +1,20 @@
-# Cloud Telegram Bot (Python, aiogram)
+# Cloud Telegram Bot — Webhook (Render)
 
-## Variáveis (Render/Railway)
-- BOT_TOKEN
-- DATABASE_URL  (Neon, com sslmode=require)
-- MP_ACCESS_TOKEN (Mercado Pago; opcional para testes)
-- ADMINS  (IDs Telegram, vírgula separados)
+## Variáveis necessárias
+- BOT_TOKEN — do BotFather
+- DATABASE_URL — Neon, com ?sslmode=require
+- MP_ACCESS_TOKEN — (opcional, para PIX)
+- ADMINS — IDs Telegram (números, separados por vírgula)
+- PUBLIC_URL — URL pública do Render (ex.: https://cloud-telegram-py-bot.onrender.com)
 
-## Deploy (Render)
-1. Conecte ao GitHub e importe este repositório.
-2. Tipo: Worker (ou Blueprint usando render.yaml)
-3. Build: `pip install -r requirements.txt`
-4. Start: `python -m src.main`
-5. Defina as Environment Variables.
+## Deploy no Render
+1. Crie Web Service a partir deste repo (plano Free).
+2. Build Command: `pip install -r requirements.txt`
+3. Start Command: `python -m src.main`
+4. Configure as variáveis no painel Environment.
+5. Deploy.
 
-## Admin no Telegram
-- `/whitelist` — ativa você
-- `/newproduct SKU|Nome|PrecoEmCentavos|Estoque`
-- Envie **foto** com legenda `SKU: ABC` (anexa imagem)
-- `/toggle SKU`, `/setprice SKU|centavos`, `/setstock SKU|qtd`
-- `/menu` — reenvia cardápio
-
-## Cliente
-- `/start` → botão **Ver cardápio**
-- Botões: **➕**, **🧺 Carrinho**, **✅ Finalizar**
-- Seleciona janela de entrega
-- PIX (copia e cola) se MP_ACCESS_TOKEN definido
+## Teste
+- `/start` → mensagem para não cadastrados
+- `/whitelist` (admin) → ativa o usuário
+- `/menu` → cardápio de exemplo
