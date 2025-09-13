@@ -15,6 +15,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
 PUBLIC_URL = os.getenv("PUBLIC_URL")
 ADMINS = [int(x.strip()) for x in (os.getenv("ADMINS") or "").split(",") if x.strip().isdigit()]
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "defaultsecret")
 
 if not BOT_TOKEN:
     raise RuntimeError("Faltou BOT_TOKEN (configure no Render)")
@@ -75,7 +76,7 @@ async def health(request):
     return web.Response(text="ok")
 
 async def on_startup(app):
-    webhook_url = f"{PUBLIC_URL}/webhook/{BOT_TOKEN}"
+    webhook_url = f"{PUBLIC_URL}/webhook/{WEBHOOK_SECRET}"
     await bot.set_webhook(webhook_url, drop_pending_updates=True)
     print(f"Webhook set: {webhook_url}")
 
@@ -88,7 +89,7 @@ async def on_shutdown(app):
 def create_app():
     app = web.Application()
     app.router.add_get("/", health)
-    SimpleRequestHandler(dp, bot).register(app, path=f"/webhook/{BOT_TOKEN}")
+    SimpleRequestHandler(dp, bot).register(app, path=f"/webhook/{WEBHOOK_SECRET}")
     setup_application(app, dp, on_startup=on_startup, on_shutdown=on_shutdown)
     return app
 
