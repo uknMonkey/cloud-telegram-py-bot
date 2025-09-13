@@ -89,7 +89,7 @@ def create_app():
     app = web.Application()
     app.router.add_get("/", health)
     SimpleRequestHandler(dp, bot).register(app, path=f"/webhook/{BOT_TOKEN}")
-    setup_application(app, on_startup=on_startup, on_shutdown=on_shutdown)
+    setup_application(app, dp, on_startup=on_startup, on_shutdown=on_shutdown)
     return app
 
 async def main():
