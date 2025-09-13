@@ -22,6 +22,12 @@ if not DATABASE_URL:
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
+async def ensure_no_webhook():
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook removido; usando long polling.")
+    except Exception as e:
+        print(f"Falha ao remover webhook: {e}")
 
 # --- Mini servidor HTTP p/ Render (healthcheck) ---
 async def health(request):
@@ -48,10 +54,18 @@ async def main():
         uvloop.install()
     except Exception:
         pass
+
+    # garante que não há webhook ativo (evita TelegramConflictError)
+    await ensure_no_webhook()
+
+    # sobe o healthcheck HTTP + polling do Telegram em paralelo (para o Render não derrubar)
     await asyncio.gather(
-        run_web(),             # servidor HTTP para o Render
-        dp.start_polling(bot)  # bot Telegram
+        run_web(),             # servidor HTTP ("/" -> ok)
+        dp.start_polling(bot)  # long polling (uma única instância)
     )
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
