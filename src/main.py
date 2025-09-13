@@ -57,30 +57,15 @@ async def run_web():
 # já com todos os comandos (whitelist, newproduct, menu, checkout etc.)
 
 async def main():
-    async def main():
-    # já instalamos uvloop no topo, antes de criar bot/dp
-    await ensure_no_webhook()
-    await asyncio.gather(
-        run_web(),            # servidor HTTP para o Render
-        dp.start_polling(bot) # long polling
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-
     # garante que não há webhook ativo (evita TelegramConflictError)
     await ensure_no_webhook()
 
-    # sobe o healthcheck HTTP + polling do Telegram em paralelo (para o Render não derrubar)
+    # sobe o healthcheck HTTP + polling do Telegram em paralelo
     await asyncio.gather(
-        run_web(),             # servidor HTTP ("/" -> ok)
-        dp.start_polling(bot)  # long polling (uma única instância)
+        run_web(),             # servidor HTTP p/ Render
+        dp.start_polling(bot)  # long polling
     )
 
-if __name__ == "__main__":
-    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
-
