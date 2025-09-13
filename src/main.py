@@ -1,21 +1,20 @@
 import os
 import asyncio
-import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 import asyncpg
 import httpx
 
-# ------------------- Config -------------------
+# -------- Config --------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
+PUBLIC_URL = os.getenv("PUBLIC_URL")
 ADMINS = [int(x.strip()) for x in (os.getenv("ADMINS") or "").split(",") if x.strip().isdigit()]
-PUBLIC_URL = os.getenv("PUBLIC_URL")  # ex.: https://cloud-telegram-py-bot.onrender.com
 
 if not BOT_TOKEN:
     raise RuntimeError("Faltou BOT_TOKEN (configure no Render)")
@@ -24,18 +23,30 @@ if not DATABASE_URL:
 if not PUBLIC_URL:
     raise RuntimeError("Faltou PUBLIC_URL (configure no Render)")
 
+try:
+    import uvloop
+    uvloop.install()
+except Exception:
+    pass
+
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-# ------------------- Banco -------------------
-async def get_db():
-    return await asyncpg.create_pool(DATABASE_URL, ssl="require")
+# -------- Banco --------
+_db_pool = None
+async def db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(DATABASE_URL, ssl="require")
+    return _db_pool
 
-# ------------------- Handlers simples -------------------
+# -------- Handlers --------
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    # Aqui você pode verificar se o usuário está cadastrado
-    await message.answer("👋 Olá! Serviço temporariamente fora do ar para não cadastrados.")
+    if message.from_user.id not in ADMINS:
+        await message.answer("👋 Olá! Serviço temporariamente fora do ar para não cadastrados.")
+        return
+    await message.answer("Bem-vindo(a)! Use /menu para ver o cardápio.")
 
 @dp.message(Command("whitelist"))
 async def cmd_whitelist(message: Message):
@@ -44,7 +55,6 @@ async def cmd_whitelist(message: Message):
     else:
         await message.answer("⛔ Você não é admin.")
 
-# Exemplo de cardápio simples
 @dp.message(Command("menu"))
 async def cmd_menu(message: Message):
     kb = InlineKeyboardBuilder()
@@ -60,7 +70,7 @@ async def cb_add(call: CallbackQuery):
 async def cb_cart(call: CallbackQuery):
     await call.message.answer("🧺 Seu carrinho:\n1x Produto Exemplo - R$90\n\nTotal: R$90")
 
-# ------------------- Webhook / Healthcheck -------------------
+# -------- Webhook --------
 async def health(request):
     return web.Response(text="ok")
 
@@ -90,7 +100,6 @@ async def main():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     print(f"HTTP webhook server on :{port}")
-
     while True:
         await asyncio.sleep(3600)
 
