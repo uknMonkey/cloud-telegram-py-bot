@@ -42,34 +42,201 @@ async def db_pool():
     return _db_pool
 
 # -------- Handlers --------
+# -------- Catálogo e Carrinho (em memória) --------
+from decimal import Decimal
+
+# Exemplo de produtos (edite livremente)
+PRODUCTS = [
+    {
+        "sku": "A12",
+        "name": "Produto A12",
+        "price_cents": 9000,  # R$ 90,00
+        "photo_url": "https://picsum.photos/seed/a12/600/400",
+        "description": "Descrição do Produto A12. Qualidade premium."
+    },
+    {
+        "sku": "B21",
+        "name": "Produto B21",
+        "price_cents": 12000,  # R$ 120,00
+        "photo_url": "https://picsum.photos/seed/b21/600/400",
+        "description": "Produto B21 com ótimo custo-benefício."
+    },
+    {
+        "sku": "C33",
+        "name": "Produto C33",
+        "price_cents": 4500,  # R$ 45,00
+        "photo_url": "https://picsum.photos/seed/c33/600/400",
+        "description": "C33 é compacto e eficiente."
+    },
+]
+
+# taxa de entrega fixa (centavos)
+DELIVERY_FEE_CENTS = 1000  # R$ 10,00
+
+# Carrinhos por usuário: { user_id: {sku: qty, ...} }
+CARTS: dict[int, dict[str, int]] = {}
+
+def price_fmt(cents: int) -> str:
+    reais = Decimal(cents) / Decimal(100)
+    return f"R$ {reais:.2f}".replace(".", ",")
+
+def get_product(sku: str):
+    for p in PRODUCTS:
+        if p["sku"] == sku:
+            return p
+    return None
+
+def get_cart(user_id: int) -> dict[str, int]:
+    return CARTS.setdefault(user_id, {})
+
+def cart_total_cents(cart: dict[str, int]) -> int:
+    total = 0
+    for sku, qty in cart.items():
+        p = get_product(sku)
+        if p:
+            total += p["price_cents"] * qty
+    return total
+
+def render_cart_text(user_id: int) -> str:
+    cart = get_cart(user_id)
+    if not cart:
+        return "🧺 Seu carrinho está vazio."
+    lines = ["🧺 *Seu carrinho:*"]
+    for sku, qty in cart.items():
+        p = get_product(sku)
+        if p:
+            lines.append(f"- {qty}x {p['name']} — {price_fmt(p['price_cents']*qty)}")
+    subtotal = cart_total_cents(cart)
+    lines.append(f"\nSubtotal: *{price_fmt(subtotal)}*")
+    lines.append(f"Entrega: *{price_fmt(DELIVERY_FEE_CENTS)}* (fixa)")
+    lines.append(f"Total: *{price_fmt(subtotal + DELIVERY_FEE_CENTS)}*")
+    return "\n".join(lines)
+
+# -------- Handlers --------
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
+    # Simples: só admins podem usar (troque depois para checar na tabela de customers)
     if message.from_user.id not in ADMINS:
         await message.answer("👋 Olá! Serviço temporariamente fora do ar para não cadastrados.")
         return
-    await message.answer("Bem-vindo(a)! Use /menu para ver o cardápio.")
-
-@dp.message(Command("whitelist"))
-async def cmd_whitelist(message: Message):
-    if message.from_user.id in ADMINS:
-        await message.answer("✅ Usuário ativado para usar o bot")
-    else:
-        await message.answer("⛔ Você não é admin.")
+    await message.answer(
+        "Bem-vindo(a)! 👋\nUse /menu para ver o cardápio.\n"
+        "Comandos: /menu, /cart, /clear, /checkout"
+    )
 
 @dp.message(Command("menu"))
 async def cmd_menu(message: Message):
+    if message.from_user.id not in ADMINS:
+        await message.answer("Serviço temporariamente fora do ar.")
+        return
+
     kb = InlineKeyboardBuilder()
-    kb.button(text="🍕 Produto Exemplo - R$90", callback_data="add:A12")
+    for p in PRODUCTS:
+        kb.button(text=f"📦 {p['name']} — {price_fmt(p['price_cents'])}", callback_data=f"prod:{p['sku']}")
     kb.button(text="🧺 Ver carrinho", callback_data="cart")
-    await message.answer("📋 Cardápio disponível:", reply_markup=kb.as_markup())
+    await message.answer("📋 *Cardápio disponível:*\nSelecione um produto:", reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("prod:"))
+async def cb_show_product(call: CallbackQuery):
+    sku = call.data.split(":", 1)[1]
+    p = get_product(sku)
+    if not p:
+        await call.answer("Produto não encontrado.", show_alert=True)
+        return
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Adicionar ao carrinho", callback_data=f"add:{sku}")
+    kb.button(text="🧺 Ver carrinho", callback_data="cart")
+    caption = (
+        f"*{p['name']}*\n"
+        f"{p['description']}\n\n"
+        f"Preço: *{price_fmt(p['price_cents'])}*"
+    )
+    # Envia foto + legenda
+    await call.message.answer_photo(photo=p["photo_url"], caption=caption, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("add:"))
 async def cb_add(call: CallbackQuery):
-    await call.message.answer("Produto adicionado ao carrinho ✅")
+    sku = call.data.split(":", 1)[1]
+    p = get_product(sku)
+    if not p:
+        await call.answer("Produto inválido.", show_alert=True)
+        return
 
+    cart = get_cart(call.from_user.id)
+    cart[sku] = cart.get(sku, 0) + 1
+    await call.answer("Adicionado ✅", show_alert=False)
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ Adicionar mais", callback_data=f"add:{sku}")
+    kb.button(text="🧺 Ver carrinho", callback_data="cart")
+    kb.button(text="🧹 Limpar carrinho", callback_data="clear")
+    kb.button(text="✅ Finalizar pedido", callback_data="checkout")
+    await call.message.answer(
+        f"✅ *{p['name']}* adicionado.\n\n{render_cart_text(call.from_user.id)}",
+        reply_markup=kb.as_markup(), parse_mode="Markdown"
+    )
+
+@dp.message(Command("cart"))
 @dp.callback_query(F.data == "cart")
-async def cb_cart(call: CallbackQuery):
-    await call.message.answer("🧺 Seu carrinho:\n1x Produto Exemplo - R$90\n\nTotal: R$90")
+async def show_cart(evt):
+    if isinstance(evt, Message):
+        user_id = evt.from_user.id
+        send = evt.answer
+    else:  # CallbackQuery
+        user_id = evt.from_user.id
+        send = evt.message.answer
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🧹 Limpar carrinho", callback_data="clear")
+    kb.button(text="✅ Finalizar pedido", callback_data="checkout")
+    kb.button(text="📋 Voltar ao cardápio", callback_data="back_menu")
+    await send(render_cart_text(user_id), reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data == "back_menu")
+async def cb_back_menu(call: CallbackQuery):
+    await cmd_menu(call.message)
+
+@dp.message(Command("clear"))
+@dp.callback_query(F.data == "clear")
+async def clear_cart(evt):
+    if isinstance(evt, Message):
+        user_id = evt.from_user.id
+        send = evt.answer
+    else:
+        user_id = evt.from_user.id
+        send = evt.message.answer
+
+    CARTS[user_id] = {}
+    await send("🧹 Carrinho limpo.")
+
+@dp.message(Command("checkout"))
+@dp.callback_query(F.data == "checkout")
+async def checkout(evt):
+    if isinstance(evt, Message):
+        user_id = evt.from_user.id
+        send = evt.answer
+    else:
+        user_id = evt.from_user.id
+        send = evt.message.answer
+
+    cart = get_cart(user_id)
+    if not cart:
+        await send("Seu carrinho está vazio.")
+        return
+
+    subtotal = cart_total_cents(cart)
+    total = subtotal + DELIVERY_FEE_CENTS
+
+    # Aqui futuramente integramos PIX (Mercado Pago) e salvamos no banco
+    txt = (
+        "🧾 *Resumo do pedido:*\n\n"
+        f"{render_cart_text(user_id)}\n\n"
+        "_Pagamento:_ *PIX aleatório (a configurar)*\n"
+        "_Entrega:_ janelas definidas por você\n"
+    )
+    await send(txt, parse_mode="Markdown")
+
 
 # -------- Webhook --------
 async def health(request):
